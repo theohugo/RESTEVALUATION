@@ -1,7 +1,19 @@
 import express from "express";
 import cors from "cors";
-import { pool } from "./db";
-
+import {
+  listEnterprises,
+  getEnterpriseById,
+  listEstablishmentsByEnterprise,
+  listTables,
+  updateEnterprise,
+  createEnterprise,
+  countEnterprises,
+  createEstablishment,
+  updateEstablishment,
+  deleteEstablishment,
+  deleteEnterprise,
+  upsertEnterpriseAddress,
+} from "./repositories/enterpriseRepository";
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -15,37 +27,29 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-// GET /enterprises?take=50&skip=0
+// GET /enterprises?take=50&skip=0&q=term
 app.get("/enterprises", async (req, res) => {
   try {
     const take = Number(req.query.take) || 50;
     const skip = Number(req.query.skip) || 0;
+    const q = typeof req.query.q === "string" ? req.query.q : undefined;
 
-    const result = await pool.query(
-      `
-      SELECT 
-        e.enterprisenumber,
-        e.status,
-        e.juridicalsituation,
-        e.typeofenterprise,
-        e.juridicalform,
-        e.juridicalformcac,
-        e.startdate,
-        d.denomination AS name
-      FROM enterprise e
-      LEFT JOIN denomination d
-        ON d.entitynumber = e.enterprisenumber
-       AND d.language = '2'              -- 2 = FR in your CSV
-       AND d.typeofdenomination = '001'  -- main denomination
-      ORDER BY e.enterprisenumber ASC
-      LIMIT $1 OFFSET $2
-      `,
-      [take, skip]
-    );
-
-    res.json(result.rows);
+    const rows = await listEnterprises(take, skip, q);
+    res.json(rows);
   } catch (error) {
     console.error("Error fetching enterprises:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// GET /enterprises/count?q=term
+app.get("/enterprises/count", async (req, res) => {
+  try {
+    const q = typeof req.query.q === "string" ? req.query.q : undefined;
+    const total = await countEnterprises(q);
+    res.json({ total });
+  } catch (error) {
+    console.error("Error counting enterprises:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -55,109 +59,170 @@ app.get("/enterprises/:id", async (req, res) => {
   try {
     const id = req.params.id;
 
-    // Fetch enterprise + denomination + address
-    const enterpriseResult = await pool.query(
-      `
-      SELECT 
-        e.enterprisenumber,
-        e.status,
-        e.juridicalsituation,
-        e.typeofenterprise,
-        e.juridicalform,
-        e.juridicalformcac,
-        e.startdate,
-        d.denomination AS name,
-        a.streetfr,
-        a.zipcode,
-        a.municipalityfr
-      FROM enterprise e
-      LEFT JOIN denomination d
-        ON d.entitynumber = e.enterprisenumber
-       AND d.language = '2'              -- FR
-       AND d.typeofdenomination = '001'  -- main denomination
-      LEFT JOIN address a
-        ON a.entitynumber = e.enterprisenumber
-       AND a.typeofaddress = 'REGO'
-      WHERE e.enterprisenumber = $1
-      `,
-      [id]
-    );
-
-    if (enterpriseResult.rowCount === 0) {
+    const enterprise = await getEnterpriseById(id);
+    if (!enterprise) {
       return res.status(404).json({ message: "Enterprise not found" });
     }
 
-    const enterprise = enterpriseResult.rows[0];
-
-    // Fetch related establishments
-    const establishmentsResult = await pool.query(
-      `
-      SELECT *
-      FROM establishment
-      WHERE enterprisenumber = $1
-      ORDER BY establishmentnumber ASC
-      `,
-      [id]
-    );
-
-    // Attach establishments to enterprise object
-    const response = {
-      ...enterprise,
-      establishments: establishmentsResult.rows,
-    };
-
-    res.json(response);
+    res.json(enterprise);
   } catch (error) {
     console.error("Error fetching enterprise:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 });
 
+// PUT /enterprises/:id
+app.put("/enterprises/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const updated = await updateEnterprise(id, req.body ?? {});
+    if (!updated) {
+      return res.status(404).json({ message: "Enterprise not found" });
+    }
+    res.json(updated);
+  } catch (error) {
+    console.error("Error updating enterprise:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// DELETE /enterprises/:id
+app.delete("/enterprises/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const ok = await deleteEnterprise(id);
+    if (!ok) return res.status(404).json({ message: "Enterprise not found" });
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting enterprise:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// POST /enterprises
+app.post("/enterprises", async (req, res) => {
+  try {
+    const body = req.body ?? {};
+    const required = [
+      "enterprisenumber",
+      "name",
+      "status",
+      "juridicalsituation",
+      "typeofenterprise",
+      "juridicalform",
+      "juridicalformcac",
+      "startdate",
+    ];
+    const missing = required.filter((k) => {
+      const v = body[k];
+      return v === undefined || v === null || (typeof v === "string" && v.trim() === "");
+    });
+    if (missing.length > 0) {
+      return res.status(400).json({
+        message: "Missing required fields",
+        missing,
+      });
+    }
+
+    const created = await createEnterprise(body);
+    if (!created) {
+      // If insert did nothing due to conflict, return existing
+      const existing = await getEnterpriseById(body.enterprisenumber);
+      return res.status(200).json(existing);
+    }
+    res.status(201).json(created);
+  } catch (error) {
+    console.error("Error creating enterprise:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
 
 // GET /enterprises/:id/establishments
 app.get("/enterprises/:id/establishments", async (req, res) => {
   try {
     const id = req.params.id;
-
-    const result = await pool.query(
-      `SELECT *
-       FROM establishment
-       WHERE enterprisenumber = $1
-       ORDER BY establishmentnumber ASC`,
-      [id]
-    );
-
-    res.json(result.rows);
+    const rows = await listEstablishmentsByEnterprise(id);
+    res.json(rows);
   } catch (error) {
     console.error("Error fetching establishments:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 });
 
-app.get("/tables", async (_req, res) => {
+// POST /enterprises/:id/establishments
+app.post("/enterprises/:id/establishments", async (req, res) => {
   try {
-    const result = await pool.query<{
-      table_name: string;
-    }>(`
-      SELECT table_name
-      FROM information_schema.tables
-      WHERE table_schema = 'public'
-      ORDER BY table_name;
-    `);
-
-    res.json({
-      connected: true,
-      tables: result.rows.map(r => r.table_name),
+    const enterpriseId = req.params.id;
+    const body = req.body ?? {};
+    if (!body.establishmentnumber) {
+      return res.status(400).json({ message: "establishmentnumber is required" });
+    }
+    const created = await createEstablishment({
+      establishmentnumber: String(body.establishmentnumber),
+      enterprisenumber: enterpriseId,
+      startdate: body.startdate ?? null,
     });
-  } catch (error: any) {
-    console.error("Error testing DB connection:", error);
-    res.status(500).json({
-      connected: false,
-      error: error.message,
-    });
+    res.status(201).json(created);
+  } catch (error) {
+    console.error("Error creating establishment:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
+// PUT /establishments/:establishmentnumber
+app.put("/establishments/:establishmentnumber", async (req, res) => {
+  try {
+    const estId = req.params.establishmentnumber;
+    const updated = await updateEstablishment(estId, req.body ?? {});
+    if (!updated) return res.status(404).json({ message: "Establishment not found" });
+    res.json(updated);
+  } catch (error) {
+    console.error("Error updating establishment:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// DELETE /establishments/:establishmentnumber
+app.delete("/establishments/:establishmentnumber", async (req, res) => {
+  try {
+    const estId = req.params.establishmentnumber;
+    const ok = await deleteEstablishment(estId);
+    if (!ok) return res.status(404).json({ message: "Establishment not found" });
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting establishment:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// PUT /enterprises/:id/address (create or update REGO address)
+app.put("/enterprises/:id/address", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const exists = await getEnterpriseById(id);
+    if (!exists) return res.status(404).json({ message: "Enterprise not found" });
+
+    const updated = await upsertEnterpriseAddress(id, {
+      streetfr: req.body?.streetfr ?? null,
+      zipcode: req.body?.zipcode ?? null,
+      municipalityfr: req.body?.municipalityfr ?? null,
+    });
+    res.json(updated);
+  } catch (error) {
+    console.error("Error upserting address:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+app.get("/tables", async (_req, res) => {
+  try {
+    const tables = await listTables();
+    res.json({ connected: true, tables });
+  } catch (error: any) {
+    console.error("Error testing DB connection:", error);
+    res.status(500).json({ connected: false, error: error.message });
+  }
+});
 
 // Start HTTP server
 app.listen(port, () => {

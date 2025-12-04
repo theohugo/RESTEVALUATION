@@ -105,14 +105,19 @@ Applications:
 - Base de données: PostgreSQL (Docker)
   - Import via `init.sql`, clés primaires et étrangères
   - dates normalisées en `YYYY-MM-DD` côté API pour éviter les décalages timezone
+  - Cohérence: Postgres est robuste pour des datasets volumineux (enterprise ~millions de lignes), SQL expressif pour jointures (enterprise ↔ denomination ↔ address ↔ establishment), Docker garantit un environnement reproductible.
+
 - Backend: Node.js + Express + TypeScript
   - Pagination (take/skip), filtres `q`, erreurs HTTP claires
   - Suppression entreprise en cascade (établissements + adresses)
+  - Cohérence: Express offre une API REST simple et performante, TypeScript sécurise les contrats entre couches (DTO, repository), et l’écosystème Node facilite l’intégration, le dev rapide et le tooling (nodemon, vite, etc.).
+
 - Frontend: Vue 3 + Vite
   - UI moderne: icônes, boutons primaires/danger/subtle
   - Recherche avec barre stylisée et clear
   - Vue détail en lecture seule avec bouton “Éditer” → modale pour CRUD (entreprise, adresse, établissements)
   - Validation côté front sur création (tous champs requis)
+  - Cohérence: Vue 3 Composition API est adaptée à des états réactifs (pagination, filtres, modales), Vite apporte un DX rapide et un bundling efficace, et le pattern “lecture seule + modale d’édition” améliore l’UX en évitant les modifications accidentelles.
 
 ## 8) Tests rapides
 Vérifier la DB:
