@@ -1,107 +1,129 @@
-Yes bro c’est **clean de chez clean**, ta base est nickel 🔥
-On te génère maintenant un **README clair** + un **.gitignore propre** pour Node/Postgres/Docker.
+# KBO – Explorateur d'entreprises
 
----
+Application full-stack pour explorer et gérer les entreprises, adresses et établissements (CRUD). Stack: PostgreSQL, Node.js (Express, TypeScript), Vue 3.
 
-# 📘 **README.md — Projet KBO (Import + Base Postgres)**
+## Prérequis
+- Docker + Docker Compose
+- Node.js 18+ et npm
+- CSV KBO disponibles dans le dossier kbo-data
 
-Structure du dossier :
-
+## Structure
 ```
-
 RESTEVALUATION/
-    docker-compose.yml
-    init.sql
-    kbo-data/
-        activity.csv
-        address.csv
-        branch.csv
-        code.csv
-        contact.csv
-        denomination.csv
-        enterprise.csv
-        establishment.csv
-        meta.csv
+  backend/
+    src/
+    package.json
+  frontend/
+    src/
+    package.json
+  init.sql
+  docker-compose.yml
+  kbo-data/
+    activity.csv
+    address.csv
+    branch.csv
+    code.csv
+    contact.csv
+    denomination.csv
+    enterprise.csv
+    establishment.csv
+    meta.csv
+```
 
-````
+## 1) Préparer les CSV
+- Place les fichiers CSV dans `kbo-data/` (noms attendus comme ci-dessus).
+- L’import se fait via `init.sql`. Par défaut:
+  - enterprise: import complet
+  - autres tables: 100 lignes (pour tests)
 
----
-
-## ▶️ Lancer la base de données
-
-```bash
+## 2) Lancer PostgreSQL (Docker)
+```
 docker compose up -d
-````
-
-Cela va :
-
-1. Démarrer PostgreSQL
-2. Exécuter `init.sql`
-3. Créer toutes les tables
-4. Importer automatiquement les CSV
-
----
-
-## 🗃️ Se connecter à PostgreSQL
-
-```bash
-docker exec -it kbo-postgres psql -U kbo -d kbo
 ```
+- Postgres démarre et exécute `init.sql` pour créer les tables + importer les CSV.
 
----
-
-## 📦 Vérification rapide
-
-Dans `psql` :
-
-```sql
-SELECT COUNT(*) FROM enterprise;
-SELECT COUNT(*) FROM branch;
-SELECT COUNT(*) FROM establishment;
+Réinitialiser:
 ```
-
-Normalement :
-
-* `enterprise` ≈ **1.9M** lignes
-* `branch`, `establishment`, etc. ≈ **100** lignes (limitées pour test)
-
----
-
-## 🔄 Réinitialiser la base (si besoin)
-
-```bash
 docker compose down
 rm -rf postgres-data
 docker compose up -d
 ```
 
-⚠️ `postgres-data` contient toutes les données → suppression = reset complet.
+## 3) Installer les dépendances
+Backend:
+```
+cd backend
+npm install
+```
+Frontend:
+```
+cd ../frontend
+npm install
+```
 
----
+## 4) Configurer les environnements
+Backend (optionnel):
+- PORT (par défaut 4000)
+- Connexion DB (configurée dans backend/src/db.ts selon docker-compose)
 
-## 📁 Contenu du projet
+Frontend:
+- Crée `frontend/.env` (ou `.env.local`) avec:
+```
+VITE_API_URL=http://localhost:4000
+```
 
-* **docker-compose.yml**
-  Configure PostgreSQL + montage des CSV.
+## 5) Démarrer
+Backend (Express + TS):
+```
+cd backend
+npm run dev
+```
+Frontend (Vue 3 + Vite):
+```
+cd ../frontend
+npm run dev
+```
+Applications:
+- API: http://localhost:4000
+- Frontend: http://localhost:5173 (par défaut)
 
-* **init.sql**
+## 6) API principale (résumé)
+- GET /health
+- GET /enterprises?take=50&skip=0&q=term
+- GET /enterprises/count?q=term
+- GET /enterprises/:id
+- POST /enterprises  (tous champs requis: enterprisenumber, name, status, juridicalsituation, typeofenterprise, juridicalform, juridicalformcac, startdate)
+- PUT /enterprises/:id
+- DELETE /enterprises/:id  (cascade: établissements + adresse)
+- GET /enterprises/:id/establishments
+- POST /enterprises/:id/establishments
+- PUT /establishments/:establishmentnumber
+- DELETE /establishments/:establishmentnumber
+- PUT /enterprises/:id/address  (upsert adresse REGO)
 
-  * Crée toutes les tables
-  * Ajoute PK + FK
-  * Importe les CSV automatiquement
-  * Limite à 100 lignes pour les tables hors `enterprise`
+## 7) Choix techniques
+- Base de données: PostgreSQL (Docker)
+  - Import via `init.sql`, clés primaires et étrangères
+  - dates normalisées en `YYYY-MM-DD` côté API pour éviter les décalages timezone
+- Backend: Node.js + Express + TypeScript
+  - Pagination (take/skip), filtres `q`, erreurs HTTP claires
+  - Suppression entreprise en cascade (établissements + adresses)
+- Frontend: Vue 3 + Vite
+  - UI moderne: icônes, boutons primaires/danger/subtle
+  - Recherche avec barre stylisée et clear
+  - Vue détail en lecture seule avec bouton “Éditer” → modale pour CRUD (entreprise, adresse, établissements)
+  - Validation côté front sur création (tous champs requis)
 
----
+## 8) Tests rapides
+Vérifier la DB:
+```
+docker exec -it kbo-postgres psql -U kbo -d kbo -c "SELECT COUNT(*) FROM enterprise;"
+```
+Tester l’API:
+```
+curl http://localhost:4000/health
+curl "http://localhost:4000/enterprises?take=25&skip=0"
+```
 
-## 🧩 Étapes suivantes
-
-* Développer l'API **Node.js (Express ou Nest)**
-* Ajouter Prisma / Sequelize si besoin
-* CRUD complet
-* Routes relationnelles (enterprise → establishments → branches, etc.)
-
----
-
-## ✨ Auteur
-
-Projet scolaire – évaluation REST API (Hugo)
+## Licence
+Projet scolaire – évaluation REST API.
