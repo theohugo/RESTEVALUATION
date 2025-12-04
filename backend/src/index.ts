@@ -1,17 +1,12 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
-import { PrismaClient } from "@prisma/client";
+import { pool } from "./db";
 
-dotenv.config();
-
-// Prisma client uses DATABASE_URL from .env and schema.prisma
-const prisma = new PrismaClient();
 
 const app = express();
 const port = process.env.PORT || 4000;
 
-// Basic middlewares
+// Middlewares
 app.use(cors());
 app.use(express.json());
 
@@ -26,13 +21,16 @@ app.get("/enterprises", async (req, res) => {
     const take = Number(req.query.take) || 50;
     const skip = Number(req.query.skip) || 0;
 
-    const enterprises = await prisma.enterprise.findMany({
-      skip,
-      take,
-      orderBy: { enterpriseNumber: "asc" },
-    });
+    // Simple SQL query with limit/offset
+    const result = await pool.query(
+      `SELECT *
+       FROM enterprise
+       ORDER BY enterprisenumber ASC
+       LIMIT $1 OFFSET $2`,
+      [take, skip]
+    );
 
-    res.json(enterprises);
+    res.json(result.rows);
   } catch (error) {
     console.error("Error fetching enterprises:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -44,16 +42,36 @@ app.get("/enterprises/:id", async (req, res) => {
   try {
     const id = req.params.id;
 
-    const enterprise = await prisma.enterprise.findUnique({
-      where: { enterpriseNumber: id },
-      include: { establishments: true },
-    });
+    // Fetch enterprise
+    const enterpriseResult = await pool.query(
+      `SELECT *
+       FROM enterprise
+       WHERE enterprisenumber = $1`,
+      [id]
+    );
 
-    if (!enterprise) {
+    if (enterpriseResult.rowCount === 0) {
       return res.status(404).json({ message: "Enterprise not found" });
     }
 
-    res.json(enterprise);
+    const enterprise = enterpriseResult.rows[0];
+
+    // Fetch related establishments
+    const establishmentsResult = await pool.query(
+      `SELECT *
+       FROM establishment
+       WHERE enterprisenumber = $1
+       ORDER BY establishmentnumber ASC`,
+      [id]
+    );
+
+    // Attach establishments to enterprise object
+    const response = {
+      ...enterprise,
+      establishments: establishmentsResult.rows,
+    };
+
+    res.json(response);
   } catch (error) {
     console.error("Error fetching enterprise:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -65,12 +83,15 @@ app.get("/enterprises/:id/establishments", async (req, res) => {
   try {
     const id = req.params.id;
 
-    const establishments = await prisma.establishment.findMany({
-      where: { enterpriseNumber: id },
-      orderBy: { establishmentNumber: "asc" },
-    });
+    const result = await pool.query(
+      `SELECT *
+       FROM establishment
+       WHERE enterprisenumber = $1
+       ORDER BY establishmentnumber ASC`,
+      [id]
+    );
 
-    res.json(establishments);
+    res.json(result.rows);
   } catch (error) {
     console.error("Error fetching establishments:", error);
     res.status(500).json({ message: "Internal server error" });
