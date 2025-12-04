@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:16
+    container_name: kbo-postgres
+    environment:
+      POSTGRES_USER: kbo
+      POSTGRES_PASSWORD: kbo
+      POSTGRES_DB: kbo
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+      - ./kbo-data:/kbo-data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql

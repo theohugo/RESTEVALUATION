@@ -1,0 +1,6 @@
+kbo-data/
+postgres-data/
+node_modules/
+dist/
+.vscode/
+.env*
