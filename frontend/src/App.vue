@@ -2,23 +2,30 @@
 import { ref, onMounted } from "vue";
 
 interface Enterprise {
-  enterpriseNumber: string;
+  enterprisenumber: string;
   status: string | null;
-  juridicalSituation: string | null;
-  typeOfEnterprise: string | null;
-  juridicalForm: string | null;
-  juridicalFormCAC: string | null;
-  startDate: string | null;
+  juridicalsituation: string | null;
+  typeofenterprise: string | null;
+  juridicalform: string | null;
+  juridicalformcac: string | null;
+  startdate: string | null;
+  name: string | null;
+}
+
+interface EnterpriseDetail extends Enterprise {
+  streetfr?: string | null;
+  zipcode?: string | null;
+  municipalityfr?: string | null;
 }
 
 interface Establishment {
-  establishmentNumber: string;
-  startDate: string | null;
-  enterpriseNumber: string | null;
+  establishmentnumber: string;
+  startdate: string | null;
+  enterprisenumber: string | null;
 }
 
 const enterprises = ref<Enterprise[]>([]);
-const selectedEnterprise = ref<Enterprise | null>(null);
+const selectedEnterprise = ref<EnterpriseDetail | null>(null);
 const establishments = ref<Establishment[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -36,7 +43,8 @@ async function loadEnterprises() {
       throw new Error("Failed to fetch enterprises");
     }
 
-    enterprises.value = await res.json();
+    const data: Enterprise[] = await res.json();
+    enterprises.value = data;
   } catch (e: any) {
     error.value = e.message ?? "Unknown error";
   } finally {
@@ -47,21 +55,30 @@ async function loadEnterprises() {
 // Fetch one enterprise details + establishments
 async function selectEnterprise(ent: Enterprise) {
   try {
-    selectedEnterprise.value = ent;
+    selectedEnterprise.value = {
+      ...ent,
+    };
     establishments.value = [];
     error.value = null;
 
     const res = await fetch(
-      `${API_URL}/enterprises/${encodeURIComponent(ent.enterpriseNumber)}`
+      `${API_URL}/enterprises/${encodeURIComponent(ent.enterprisenumber)}`
     );
     if (!res.ok) {
       throw new Error("Failed to fetch enterprise details");
     }
     const data = await res.json();
+    // data contains enterprise + establishments + optional address fields
+    selectedEnterprise.value = data as EnterpriseDetail;
     establishments.value = data.establishments ?? [];
   } catch (e: any) {
     error.value = e.message ?? "Unknown error";
   }
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return "-";
+  return new Date(value).toLocaleDateString();
 }
 
 onMounted(() => {
@@ -73,7 +90,7 @@ onMounted(() => {
   <div class="app">
     <header class="header">
       <h1>📊 KBO – Explorateur d'entreprises</h1>
-      <p class="subtitle">Backend Node + Postgres + Prisma · Front Vue 3</p>
+      <p class="subtitle">Backend Node + Postgres · Front Vue 3</p>
     </header>
 
     <main class="layout">
@@ -86,6 +103,7 @@ onMounted(() => {
         <table v-if="!loading && !error" class="table">
           <thead>
             <tr>
+              <th>Nom</th>
               <th>EnterpriseNumber</th>
               <th>Status</th>
               <th>Type</th>
@@ -95,23 +113,20 @@ onMounted(() => {
           <tbody>
             <tr
               v-for="e in enterprises"
-              :key="e.enterpriseNumber"
+              :key="e.enterprisenumber"
               :class="{
                 row: true,
                 'row--selected':
                   selectedEnterprise &&
-                  selectedEnterprise.enterpriseNumber === e.enterpriseNumber,
+                  selectedEnterprise.enterprisenumber === e.enterprisenumber,
               }"
               @click="selectEnterprise(e)"
             >
-              <td>{{ e.enterpriseNumber }}</td>
+              <td>{{ e.name ?? "—" }}</td>
+              <td>{{ e.enterprisenumber }}</td>
               <td>{{ e.status ?? "-" }}</td>
-              <td>{{ e.typeOfEnterprise ?? "-" }}</td>
-              <td>
-                {{
-                  e.startDate ? new Date(e.startDate).toLocaleDateString() : "-"
-                }}
-              </td>
+              <td>{{ e.typeofenterprise ?? "-" }}</td>
+              <td>{{ formatDate(e.startdate) }}</td>
             </tr>
           </tbody>
         </table>
@@ -125,34 +140,47 @@ onMounted(() => {
         </div>
 
         <div v-else class="detail">
-          <h3>{{ selectedEnterprise.enterpriseNumber }}</h3>
+          <h3>
+            {{ selectedEnterprise.name ?? "Nom inconnu" }}
+            <span class="detail__id">
+              ({{ selectedEnterprise.enterprisenumber }})
+            </span>
+          </h3>
           <ul>
             <li>
               <strong>Status :</strong> {{ selectedEnterprise.status ?? "-" }}
             </li>
             <li>
               <strong>Situation juridique :</strong>
-              {{ selectedEnterprise.juridicalSituation ?? "-" }}
+              {{ selectedEnterprise.juridicalsituation ?? "-" }}
             </li>
             <li>
               <strong>Type :</strong>
-              {{ selectedEnterprise.typeOfEnterprise ?? "-" }}
+              {{ selectedEnterprise.typeofenterprise ?? "-" }}
             </li>
             <li>
               <strong>Forme juridique :</strong>
-              {{ selectedEnterprise.juridicalForm ?? "-" }}
+              {{ selectedEnterprise.juridicalform ?? "-" }}
             </li>
             <li>
               <strong>Forme CAC :</strong>
-              {{ selectedEnterprise.juridicalFormCAC ?? "-" }}
+              {{ selectedEnterprise.juridicalformcac ?? "-" }}
             </li>
             <li>
               <strong>Date de début :</strong>
+              {{ formatDate(selectedEnterprise.startdate) }}
+            </li>
+            <li
+              v-if="selectedEnterprise.streetfr || selectedEnterprise.zipcode"
+            >
+              <strong>Adresse :</strong>
               {{
-                selectedEnterprise.startDate
-                  ? new Date(selectedEnterprise.startDate).toLocaleDateString()
-                  : "-"
+                selectedEnterprise.streetfr
+                  ? selectedEnterprise.streetfr + ", "
+                  : ""
               }}
+              {{ selectedEnterprise.zipcode ?? "" }}
+              {{ selectedEnterprise.municipalityfr ?? "" }}
             </li>
           </ul>
 
@@ -165,15 +193,9 @@ onMounted(() => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="est in establishments" :key="est.establishmentNumber">
-                <td>{{ est.establishmentNumber }}</td>
-                <td>
-                  {{
-                    est.startDate
-                      ? new Date(est.startDate).toLocaleDateString()
-                      : "-"
-                  }}
-                </td>
+              <tr v-for="est in establishments" :key="est.establishmentnumber">
+                <td>{{ est.establishmentnumber }}</td>
+                <td>{{ formatDate(est.startdate) }}</td>
               </tr>
             </tbody>
           </table>
@@ -279,6 +301,11 @@ onMounted(() => {
 
 .detail h3 {
   margin: 0 0 0.5rem;
+}
+
+.detail__id {
+  font-size: 0.85rem;
+  color: #9ca3af;
 }
 
 .detail ul {
