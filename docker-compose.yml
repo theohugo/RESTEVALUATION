@@ -6,21 +6,9 @@ services:
       POSTGRES_USER: kbo
       POSTGRES_PASSWORD: kbo
       POSTGRES_DB: kbo
-      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
       - "5432:5432"
     volumes:
-      # Use a named volume to force fresh init and avoid old credentials
-      - postgres-data-dev:/var/lib/postgresql/data
+      - ./postgres-data:/var/lib/postgresql/data
       - ./kbo-data:/kbo-data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kbo -d kbo || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    # Credentials above must match backend/.env (DB_USER/DB_PASSWORD/DB_NAME)
-
-volumes:
-  postgres-data-dev:
-    # fresh named volume to avoid existing bind-mounted data
