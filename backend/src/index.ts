@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { pool } from "./db";
+import { isAuthError } from "./db";
 
 
 const app = express();
@@ -9,6 +10,23 @@ const port = process.env.PORT || 4000;
 // Middlewares
 app.use(cors());
 app.use(express.json());
+
+// Quick DB connectivity check on startup
+(async () => {
+  try {
+    const client = await pool.connect();
+    await client.query("SELECT 1");
+    client.release();
+    console.log("Database connection OK");
+  } catch (err) {
+    console.error("Database connection FAILED:", err);
+    if (isAuthError(err)) {
+      console.error(
+        "Hint: 28P01 indicates the Postgres data directory already has different credentials. Stop containers, delete ./postgres-data, then `docker compose up -d`."
+      );
+    }
+  }
+})();
 
 // Healthcheck route
 app.get("/health", (_req, res) => {
